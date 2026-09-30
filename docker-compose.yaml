@@ -1,0 +1,28 @@
+# Coolify: create the resource as "Docker Compose" from the Git repository that
+# holds this folder (Coolify builds the image from the Dockerfile next to it).
+services:
+  dragonwilds:
+    build: .
+    restart: unless-stopped
+    environment:
+      RSDW_OWNER_ID: '${RSDW_OWNER_ID}'
+      RSDW_SERVER_NAME: '${RSDW_SERVER_NAME}'
+      RSDW_WORLD_NAME: '${RSDW_WORLD_NAME}'
+      RSDW_PASSWORD: '${RSDW_PASSWORD}'
+      RSDW_ADMIN_PASSWORD: '${RSDW_ADMIN_PASSWORD}'
+      RSDW_ADMINS: '${RSDW_ADMINS:-}'
+      RSDW_PORT: '7777'
+      UE4SS_ENABLED: '${UE4SS_ENABLED:-true}'   # false = plain Windows server, no mods
+      STEAMAPPVALIDATE: '0'                     # 1 = verify every server file on start (slow)
+    ports:
+      - '7777:7777/udp'
+      - '8888:8888/udp'
+    volumes:
+      # Server files and the Wine install of the game (re-downloaded if lost).
+      - 'dragonwilds-win-data:/home/steam/rsdw-windows'
+      # World saves. TEST WITH A COPY FIRST (see README step 1).
+      - '/srv/dragonwilds/saves-test:/home/steam/rsdw-windows/RSDragonwilds/Saved/SaveGames'
+      # UE4SS and the server-side mods: dwmapi.dll (loaded as version.dll) + ue4ss/Mods/... (writable: UE4SS.log and mod saves go here)
+      - '/srv/dragonwilds/ue4ss:/ue4ss'
+volumes:
+  dragonwilds-win-data: null

@@ -1,0 +1,4 @@
+# The start script runs in Linux: keep LF line endings even when committed from Windows.
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.ini text eol=lf

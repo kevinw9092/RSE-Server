@@ -1,0 +1,2 @@
+# Local docker compose overrides (owner id, passwords)
+.env
