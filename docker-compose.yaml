@@ -21,7 +21,7 @@ services:
       # Server files and the Wine install of the game (re-downloaded if lost).
       - 'dragonwilds-win-data:/home/steam/rsdw-windows'
       # World saves. TEST WITH A COPY FIRST (see README step 1).
-      - '/srv/dragonwilds/saves-test:/home/steam/rsdw-windows/RSDragonwilds/Saved/SaveGames'
+      - '/srv/dragonwilds/saves:/home/steam/rsdw-windows/RSDragonwilds/Saved/SaveGames'
       # UE4SS and the server-side mods: dwmapi.dll (loaded as version.dll) + ue4ss/Mods/... (writable: UE4SS.log and mod saves go here)
       - '/srv/dragonwilds/ue4ss:/ue4ss'
 volumes:
