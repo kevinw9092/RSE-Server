@@ -1,6 +1,6 @@
 <#
   Copies UE4SS and the server-side mods from your game install to the Coolify host,
-  file by file with scp, into the folder RSE-Server mounts (/srv/dragonwilds/ue4ss).
+  as one tarball over scp, into the folder RSE-Server mounts (/srv/dragonwilds/ue4ss).
 
   Example:
     .\deploy-ue4ss.ps1 -Server root@your-host
@@ -8,7 +8,8 @@
 
   Only what a server needs is sent: dwmapi.dll, UE4SS.dll, its settings (hot reload
   off), the shared Lua helpers, and the mods you name. Logs, crash dumps, mod saves
-  and UI-only mods stay on your PC. Use an SSH key, or you type the password per file.
+  and UI-only mods stay on your PC. It connects twice (scp, then ssh to unpack), so you
+  enter your key passphrase twice; load the key into ssh-agent (ssh-add) to skip both.
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
@@ -46,38 +47,46 @@ foreach ($mod in $Mods) { Add-Tree "$ue4ss\Mods\$mod" }
 
 # Server copies of the settings and mods list, made in a temp folder (your PC's stay as they are).
 $stage = Join-Path $env:TEMP 'rse-server-ue4ss'
-New-Item -ItemType Directory -Force $stage | Out-Null
+New-Item -ItemType Directory -Force $stage -WhatIf:$false | Out-Null
 (Get-Content "$ue4ss\UE4SS-settings.ini") `
     -replace '^(EnableHotReloadSystem\s*=\s*).*', '${1}0' `
     -replace '^(ConsoleEnabled\s*=\s*).*', '${1}0' `
     -replace '^(GuiConsoleEnabled\s*=\s*).*', '${1}0' `
     -replace '^(GuiConsoleVisible\s*=\s*).*', '${1}0' |
-    Set-Content "$stage\UE4SS-settings.ini" -Encoding ascii
+    Set-Content "$stage\UE4SS-settings.ini" -Encoding ascii -WhatIf:$false
 $files['ue4ss/UE4SS-settings.ini'] = "$stage\UE4SS-settings.ini"
-($Mods | ForEach-Object { "$_ : 1" }) + '' | Set-Content "$stage\mods.txt" -Encoding ascii
+($Mods | ForEach-Object { "$_ : 1" }) + '' | Set-Content "$stage\mods.txt" -Encoding ascii -WhatIf:$false
 $files['ue4ss/Mods/mods.txt'] = "$stage\mods.txt"
 
-# Folders first (one ssh call), then each file.
-$dirs = $files.Keys | ForEach-Object { $d = Split-Path $_ -Parent; if ($d) { "$Remote/" + ($d -replace '\\', '/') } } | Sort-Object -Unique
-$dirs = @($Remote) + $dirs
-Write-Host "Sending $($files.Count) files to ${Server}:$Remote" -ForegroundColor Cyan
-if ($PSCmdlet.ShouldProcess($Server, "mkdir -p $($dirs.Count) folders")) {
-    ssh -p $Port $Server ("mkdir -p " + (($dirs | ForEach-Object { "'$_'" }) -join ' '))
-    if ($LASTEXITCODE -ne 0) { throw "ssh mkdir failed ($LASTEXITCODE)" }
-}
-$i = 0
+# Lay the files out as they go on the server, pack them into one tarball, then send it
+# with one scp and unpack it with one ssh: two connections instead of one per file.
+$tree = Join-Path $stage 'tree'
+if (Test-Path $tree) { Remove-Item $tree -Recurse -Force -WhatIf:$false }
 foreach ($rel in $files.Keys) {
-    $i++
-    $target = "${Server}:$Remote/$rel"
-    if ($PSCmdlet.ShouldProcess($target, "scp $($files[$rel])")) {
-        Write-Host ("[{0}/{1}] {2}" -f $i, $files.Count, $rel)
-        scp -q -P $Port "$($files[$rel])" "$target"
-        if ($LASTEXITCODE -ne 0) { throw "scp failed for $rel ($LASTEXITCODE)" }
-    }
+    $dest = Join-Path $tree ($rel -replace '/', '\')
+    New-Item -ItemType Directory -Force (Split-Path $dest -Parent) -WhatIf:$false | Out-Null
+    Copy-Item -LiteralPath $files[$rel] -Destination $dest -WhatIf:$false
+}
+$tarball = Join-Path $stage 'ue4ss.tgz'
+# Windows' own tar; the Git for Windows one on PATH misreads C:\ paths.
+& "$env:SystemRoot\System32\tar.exe" -czf $tarball -C $tree .
+if ($LASTEXITCODE -ne 0) { throw "tar failed ($LASTEXITCODE)" }
+$size = '{0:N1} MB' -f ((Get-Item $tarball).Length / 1MB)
+Write-Host "Packed $($files.Count) files ($size)" -ForegroundColor Cyan
+$files.Keys | ForEach-Object { Write-Verbose $_ }
+
+$remoteTar = '/tmp/rse-server-ue4ss.tgz'
+if ($PSCmdlet.ShouldProcess("${Server}:$remoteTar", "scp $tarball")) {
+    scp -P $Port "$tarball" "${Server}:$remoteTar"
+    if ($LASTEXITCODE -ne 0) { throw "scp failed ($LASTEXITCODE)" }
 }
 
-# The container runs as uid 1000.
-if ($PSCmdlet.ShouldProcess($Server, "chown -R 1000:1000 $Remote")) {
-    ssh -t -p $Port $Server "sudo chown -R 1000:1000 '$Remote' || chown -R 1000:1000 '$Remote'"
+# Unpack over the existing folder, then hand it to uid 1000, which the container runs as.
+# Windows tar marks everything world-writable; --no-same-permissions applies the server's umask instead.
+$unpack = "mkdir -p '$Remote' && tar -xzf '$remoteTar' --no-same-owner --no-same-permissions -C '$Remote' && rm -f '$remoteTar' && " +
+          "(sudo chown -R 1000:1000 '$Remote' || chown -R 1000:1000 '$Remote')"
+if ($PSCmdlet.ShouldProcess($Server, "unpack into $Remote, chown -R 1000:1000")) {
+    ssh -t -p $Port $Server $unpack
+    if ($LASTEXITCODE -ne 0) { throw "unpack on server failed ($LASTEXITCODE)" }
 }
 Write-Host "Done. Redeploy (or restart) the server in Coolify to load them." -ForegroundColor Green
