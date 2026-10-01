@@ -105,10 +105,5 @@ else
     echo "[rse-server] server log: $server_log"
 fi
 
-if [[ -r /dev/ntsync && -w /dev/ntsync ]]; then
-    echo "[rse-server] /dev/ntsync available: Wine uses kernel thread sync"
-else
-    echo "[rse-server] /dev/ntsync not available: Wine uses wineserver for thread sync (slower)"
-fi
 echo "[rse-server] starting $SERVER_EXE on port $RSDW_PORT"
 exec xvfb-run -a wine "$SERVER_EXE" "${log_args[@]}" -Port "$RSDW_PORT" "${extra[@]}"
