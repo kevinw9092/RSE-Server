@@ -84,5 +84,31 @@ SERVER_EXE=RSDragonwildsServer-Win64-Shipping.exe
 cd "$BIN"
 extra=()
 [[ -n "${RSDW_ADDITIONAL_ARGS:-}" ]] && read -r -a extra <<< "$RSDW_ADDITIONAL_ARGS"
+
+# 5. The server's log. -log would print it to a console window, which under Wine
+#    is a separate process (conhost.exe) that every line goes through and that keeps
+#    all of it in memory for the whole uptime (335 MB after 3 days, 2026-10-01). The
+#    server writes the same lines to Saved/Logs/<name>.log anyway, so that file is
+#    followed instead and shows in docker logs (Coolify's Logs tab).
+#    -n 0: nothing from the last run. -F: when the server moves the old file aside
+#    (to a -backup- copy) and starts a new one, tail follows the new one from its start.
+#    SERVER_CONSOLE_LOG=true brings back -log (a console window), for debugging.
+LOG_DIR="$GAME/Saved/Logs"
+mkdir -p "$LOG_DIR"
+server_log=$(ls -t "$LOG_DIR"/*.log 2>/dev/null | grep -v -- '-backup-' | head -n 1 || true)
+server_log="${server_log:-$LOG_DIR/RSDragonwilds.log}"
+log_args=()
+if [[ "${SERVER_CONSOLE_LOG:-false}" == "true" ]]; then
+    log_args=(-log)
+else
+    tail -n 0 -F "$server_log" 2>/dev/null &
+    echo "[rse-server] server log: $server_log"
+fi
+
+if [[ -r /dev/ntsync && -w /dev/ntsync ]]; then
+    echo "[rse-server] /dev/ntsync available: Wine uses kernel thread sync"
+else
+    echo "[rse-server] /dev/ntsync not available: Wine uses wineserver for thread sync (slower)"
+fi
 echo "[rse-server] starting $SERVER_EXE on port $RSDW_PORT"
-exec xvfb-run -a wine "$SERVER_EXE" -log -Port "$RSDW_PORT" "${extra[@]}"
+exec xvfb-run -a wine "$SERVER_EXE" "${log_args[@]}" -Port "$RSDW_PORT" "${extra[@]}"

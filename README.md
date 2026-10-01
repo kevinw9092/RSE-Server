@@ -29,6 +29,13 @@ sudo cp -a /srv/dragonwilds/saves /srv/dragonwilds/saves-test
 sudo chown -R 1000:1000 /srv/dragonwilds/saves-test
 ```
 
+Load the kernel's ntsync module, now and at every boot (Linux 6.14 or newer). Wine then syncs the server's threads through the kernel instead of its wineserver process:
+```bash
+sudo modprobe ntsync && echo ntsync | sudo tee /etc/modules-load.d/ntsync.conf
+ls -l /dev/ntsync
+```
+If `modprobe` finds no such module, the kernel is too old: remove the `devices:` lines from `docker-compose.yaml`, or the container will not start.
+
 ### 2. On the host: UE4SS and the server-side mods
 1. Download UE4SS for RSDragonwilds, the same package you use on your PC ([Nexus](https://www.nexusmods.com/runescapedragonwilds/mods/4)).
 2. Lay it out like this. It's the contents of your PC's `Binaries\Win64` UE4SS files, minus the client-only mods:
@@ -65,7 +72,8 @@ Coolify builds images from Git. Push `RSE-Server/` to a GitHub or GitLab reposit
 In order, you should see:
 - `[rse-server] updating app 4019830 (Windows build)`, then SteamCMD's `Success! App '4019830' fully installed.`
 - `[rse-server] UE4SS enabled, mods: RSE-Toolbag RSE-Transmog ...`
-- `[rse-server] starting RSDragonwildsServer.exe on port 7777`, then the server's own log lines
+- `[rse-server] server log: .../Saved/Logs/RSDragonwilds.log` and `/dev/ntsync available`
+- `[rse-server] starting RSDragonwildsServer-Win64-Shipping.exe on port 7777`, then the server's own log lines (followed from its log file; set `SERVER_CONSOLE_LOG=true` for the old `-log` console instead)
 
 UE4SS writes its own log to `/srv/dragonwilds/ue4ss/ue4ss/UE4SS.log` on the host. It should contain `[RSE-Transmog] v... loaded`.
 

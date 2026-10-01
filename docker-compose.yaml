@@ -14,6 +14,12 @@ services:
       RSDW_PORT: '7777'
       UE4SS_ENABLED: '${UE4SS_ENABLED:-true}'   # false = plain Windows server, no mods
       STEAMAPPVALIDATE: '0'                     # 1 = verify every server file on start (slow)
+    # Wine's thread sync through the kernel (ntsync, Linux 6.14+): much less
+    # overhead for a server with 60+ threads. The host must load the module at
+    # boot (README step 1). Without /dev/ntsync the container will not start, so
+    # remove these two lines on a host that does not have it.
+    devices:
+      - '/dev/ntsync:/dev/ntsync'
     ports:
       - '7777:7777/udp'
       - '8888:8888/udp'
